@@ -1,7 +1,18 @@
 import pandas as pd
 import numpy as np
-from pymc_marketing.mmm.transformers import geometric_adstock, logistic_saturation
 from sklearn.preprocessing import MaxAbsScaler
+
+
+def geometric_adstock_np(x: np.ndarray, alpha: float, l_max: int, normalize: bool = True) -> np.ndarray:
+    weights = alpha ** np.arange(l_max)
+    if normalize:
+        weights = weights / weights.sum()
+    # "After" mode: y[t] = sum_i w[i] * x[t-i], so full convolution truncated to len(x)
+    return np.convolve(x, weights, mode="full")[: len(x)]
+
+
+def logistic_saturation_np(x: np.ndarray, lam: float) -> np.ndarray:
+    return (1 - np.exp(-lam * x)) / (1 + np.exp(-lam * x))
 
 def data_generator(start_date, periods, channels, spend_scalar, adstock_alphas, saturation_lamdas, betas, freq="W"):
     '''
@@ -52,17 +63,18 @@ def data_generator(start_date, periods, channels, spend_scalar, adstock_alphas, 
         df[f"{channel}_spend"] = channel_transformer.transform(df[f"{channel}_spend_raw"].values.reshape(-1, 1))
         
         # Apply adstock transformation
-        df[f"{channel}_adstock"] = geometric_adstock(
-            x=df[f"{channel}_spend"].to_numpy(),
+        df[f"{channel}_adstock"] = geometric_adstock_np(
+            x=df[f"{channel}_spend"].to_numpy().flatten(),
             alpha=adstock_alphas[i],
-            l_max=8, normalize=True
-        ).eval().flatten()
-        
+            l_max=8,
+            normalize=True,
+        )
+
         # Apply saturation transformation
-        df[f"{channel}_saturated"] = logistic_saturation(
+        df[f"{channel}_saturated"] = logistic_saturation_np(
             x=df[f"{channel}_adstock"].to_numpy(),
-            lam=saturation_lamdas[i]
-        ).eval()
+            lam=saturation_lamdas[i],
+        )
         
         # Calculate contribution to sales
         df[f"{channel}_sales"] = df[f"{channel}_saturated"] * betas[i]
